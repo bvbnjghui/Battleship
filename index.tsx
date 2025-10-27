@@ -82,12 +82,15 @@ const translations = {
     enemyFleet: { en: 'Enemy Fleet', zh: '敵方戰艦' },
     playerFleet: { en: 'Player {playerNum}\'s Fleet', zh: '玩家 {playerNum} 的戰艦'},
     placeYourShip: { en: '{playerName}, place your {shipName} (length: {length} cells).', zh: '{playerName}，請放置您的 {shipName} (長度: {length} 格)。' },
+    confirmOrRotate: { en: 'Confirm placement for {shipName} or rotate.', zh: '確認放置 {shipName} 或繼續旋轉。'},
     aiThinking: { en: 'AI is thinking...', zh: 'AI 正在思考...' },
     playerTurn: { en: '{playerName}\'s turn! Attack an enemy cell.', zh: '{playerName}的回合！請攻擊敵方格。' },
     switchingTurns: { en: 'Switching turns...', zh: '切換回合中...' },
     gameOver: { en: 'Game Over!', zh: '遊戲結束！' },
     winner: { en: '{playerName} wins!', zh: '{playerName} 贏了！' },
     rotateShip: { en: 'Rotate Ship', zh: '旋轉船艦' },
+    confirmPlacement: { en: 'Confirm Placement', zh: '確認放置'},
+    cancel: { en: 'Cancel', zh: '取消'},
     horizontal: { en: 'Horizontal', zh: '水平' },
     vertical: { en: 'Vertical', zh: '垂直' },
     viewMyFleet: { en: 'View My Fleet', zh: '查看我的艦隊' },
@@ -412,10 +415,19 @@ const Settings = ({ initialSettings, onSave, setView, t }) => {
     );
 };
 
-const GridDisplay = ({ grid, gridSize, onCellClick, isEnemy, onGridMouseMove, onGridLeave, previewCells, gameState, alwaysShowShips, showCoordinates }) => {
+const GridDisplay = ({ grid, gridSize, onCellClick, isEnemy, onGridMouseMove, onGridLeave, previewCells, provisionalPlacement, gameState, alwaysShowShips, showCoordinates }) => {
     const previewCoords = new Map(previewCells.map(c => [c.coord, c.possible]));
     const topCoords = Array.from({ length: gridSize }, (_, i) => String.fromCharCode(65 + i));
     const leftCoords = Array.from({ length: gridSize }, (_, i) => i + 1);
+
+    const provisionalCells = new Set();
+    if (provisionalPlacement) {
+        const { row, col, ship, isHorizontal } = provisionalPlacement;
+        for (let i = 0; i < ship.length; i++) {
+            const currentCell = isHorizontal ? `${row}-${col + i}` : `${row + i}-${col}`;
+            provisionalCells.add(currentCell);
+        }
+    }
 
     return (
       <div className={`grid-wrapper ${showCoordinates ? 'with-coords' : ''}`} style={{ '--grid-size': gridSize } as React.CSSProperties}>
@@ -433,8 +445,14 @@ const GridDisplay = ({ grid, gridSize, onCellClick, isEnemy, onGridMouseMove, on
           {grid.map((row, rowIndex) =>
             row.map((cell, colIndex) => {
               const coord = `${rowIndex}-${colIndex}`;
-              const isPreview = !isEnemy && previewCoords.has(coord);
-              const previewClass = isPreview ? (previewCoords.get(coord) ? 'preview-possible' : 'preview-impossible') : '';
+              const isHoverPreview = !isEnemy && previewCoords.has(coord);
+              const isProvisional = provisionalCells.has(coord);
+              let previewClass = '';
+              if (isProvisional) {
+                  previewClass = 'preview-provisional';
+              } else if (isHoverPreview) {
+                  previewClass = previewCoords.get(coord) ? 'preview-possible' : 'preview-impossible';
+              }
               const cellState = cell.state !== CELL_STATE.EMPTY && (isEnemy ? (cell.state !== CELL_STATE.SHIP) : (alwaysShowShips || gameState === 'placement' || cell.state !== CELL_STATE.SHIP)) ? cell.state : '';
               return (<div key={coord} data-row={rowIndex} data-col={colIndex} className={`cell ${cellState} ${previewClass}`} onClick={() => onCellClick(rowIndex, colIndex)} />);
             })
@@ -444,12 +462,13 @@ const GridDisplay = ({ grid, gridSize, onCellClick, isEnemy, onGridMouseMove, on
     );
 };
 
+
 const FleetModal = ({ grid, gridSize, onClose, gameState, t, showCoordinates }) => (
     <div className="modal-overlay" onClick={onClose}>
         <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <button className="modal-close" onClick={onClose}>&times;</button>
             <h2>{t('yourFleet')}</h2>
-            <GridDisplay grid={grid} gridSize={gridSize} onCellClick={() => {}} isEnemy={false} onGridMouseMove={() => {}} onGridLeave={() => {}} previewCells={[]} gameState={gameState} alwaysShowShips={true} showCoordinates={showCoordinates} />
+            <GridDisplay grid={grid} gridSize={gridSize} onCellClick={() => {}} isEnemy={false} onGridMouseMove={() => {}} onGridLeave={() => {}} previewCells={[]} provisionalPlacement={null} gameState={gameState} alwaysShowShips={true} showCoordinates={showCoordinates} />
         </div>
     </div>
 );
@@ -500,6 +519,7 @@ const Game = ({ setView, gameMode, settings, t }) => {
   const [aiShots, setAiShots] = useState(new Set());
   const [previewCells, setPreviewCells] = useState([]);
   const [hoveredCell, setHoveredCell] = useState(null);
+  const [provisionalPlacement, setProvisionalPlacement] = useState(null);
   const [showFleetModal, setShowFleetModal] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [winnerName, setWinnerName] = useState('');
@@ -573,7 +593,7 @@ const Game = ({ setView, gameMode, settings, t }) => {
     const isTargeting = (aiDifficulty === 'normal' || aiDifficulty === 'hard') && mode === 'targeting' && hits.length > 0;
 
     if (isTargeting) {
-        const potentialTargets = new Set<string>();
+        const potentialTargets = new Set();
         const addTarget = (r, c) => {
             if (r >= 0 && r < gridSize && c >= 0 && c < gridSize && !aiShots.has(`${r},${c}`)) {
                 potentialTargets.add(`${r},${c}`);
@@ -601,7 +621,7 @@ const Game = ({ setView, gameMode, settings, t }) => {
         const validTargets = Array.from(potentialTargets);
         if (validTargets.length > 0) {
             const targetCoord = validTargets[Math.floor(Math.random() * validTargets.length)];
-            [row, col] = targetCoord.split(',').map(Number);
+            [row, col] = (targetCoord as string).split(',').map(Number);
         } else {
             setAiTargetingInfo({ mode: 'hunting', hits: [] });
         }
@@ -743,8 +763,12 @@ const Game = ({ setView, gameMode, settings, t }) => {
     const activePlayerName = activePlayer === 1 ? player1Name : player2Name;
     
     if (gameState === 'placement') {
-      const ship = shipsToPlace[placementIndex];
-      if (ship) setStatus(t('placeYourShip', { playerName: activePlayerName, shipName: ship.name, length: ship.length }));
+        if (provisionalPlacement) {
+            setStatus(t('confirmOrRotate', { shipName: provisionalPlacement.ship.name }))
+        } else {
+          const ship = shipsToPlace[placementIndex];
+          if (ship) setStatus(t('placeYourShip', { playerName: activePlayerName, shipName: ship.name, length: ship.length }));
+        }
     } else if (gameState === 'battle') {
         if (gameMode === 'single' && activePlayer === 2) setStatus(t('aiThinking'));
         else setStatus(t('playerTurn', { playerName: activePlayerName }));
@@ -753,9 +777,16 @@ const Game = ({ setView, gameMode, settings, t }) => {
     } else if (gameState === 'game_over') {
         setStatus(t('gameOver'));
     }
-  }, [gameState, placementIndex, activePlayer, gameMode, player2Ships, shipsToPlace, t]);
+  }, [gameState, placementIndex, activePlayer, gameMode, player2Ships, shipsToPlace, provisionalPlacement, t]);
 
-  const togglePlacementOrientation = useCallback(() => setPlacementOrientation(p => (p === 'horizontal' ? 'vertical' : 'horizontal')), []);
+  const togglePlacementOrientation = useCallback(() => {
+    const newOrientation = placementOrientation === 'horizontal' ? 'vertical' : 'horizontal';
+    setPlacementOrientation(newOrientation);
+    if(provisionalPlacement) {
+        setProvisionalPlacement(prev => ({...prev, isHorizontal: newOrientation === 'horizontal'}));
+    }
+  }, [placementOrientation, provisionalPlacement]);
+
 
   useEffect(() => {
     const handleKeyPress = (e) => { if (gameState === 'placement' && (e.key === 'r' || e.key === 'R')) togglePlacementOrientation(); };
@@ -764,7 +795,7 @@ const Game = ({ setView, gameMode, settings, t }) => {
   }, [gameState, togglePlacementOrientation]);
 
   useEffect(() => {
-    if (gameState !== 'placement' || !hoveredCell || totalShipsToPlace === 0) { if (previewCells.length > 0) setPreviewCells([]); return; }
+    if (gameState !== 'placement' || !hoveredCell || totalShipsToPlace === 0 || provisionalPlacement) { if (previewCells.length > 0) setPreviewCells([]); return; }
     const { row, col } = hoveredCell;
     const shipToPlace = shipsToPlace[placementIndex];
     if (!shipToPlace) return;
@@ -776,32 +807,52 @@ const Game = ({ setView, gameMode, settings, t }) => {
     else for (let i = 0; i < shipToPlace.length; i++) { if (row + i < gridSize) cells.push(`${row + i}-${col}`); }
     const possible = canPlaceShip(currentGrid, row, col, shipToPlace.length, isHorizontal, gridSize);
     setPreviewCells(cells.map(c => ({ coord: c, possible })));
-  }, [hoveredCell, placementOrientation, player1Grid, player2Grid, activePlayer, placementIndex, gameState, previewCells.length, shipsToPlace, gridSize, totalShipsToPlace]);
+  }, [hoveredCell, placementOrientation, player1Grid, player2Grid, activePlayer, placementIndex, gameState, previewCells.length, shipsToPlace, gridSize, totalShipsToPlace, provisionalPlacement]);
   
   const handleGridClickPlacement = (row, col) => {
     if (placementIndex >= totalShipsToPlace) return;
-    const currentGrid = activePlayer === 1 ? player1Grid : player2Grid;
-    const setGrid = activePlayer === 1 ? setPlayer1Grid : setPlayer2Grid;
-    const setShips = activePlayer === 1 ? setPlayer1Ships : setPlayer2Ships;
-    const ships = activePlayer === 1 ? player1Ships : player2Ships;
-    const shipToPlace = ships[placementIndex];
+    const shipToPlace = shipsToPlace[placementIndex];
     const isHorizontal = placementOrientation === 'horizontal';
+    const currentGrid = activePlayer === 1 ? player1Grid : player2Grid;
+
+    if (provisionalPlacement) {
+      setProvisionalPlacement(null);
+      return;
+    }
 
     if (canPlaceShip(currentGrid, row, col, shipToPlace.length, isHorizontal, gridSize)) {
-        setGrid(placeShip(currentGrid, row, col, shipToPlace, isHorizontal));
-        setShips(s => s.map((ship, i) => i === placementIndex ? {...ship, placed: true} : ship));
-        const newPlacementIndex = placementIndex + 1;
-        setPlacementIndex(newPlacementIndex);
-        setHoveredCell(null);
-
-        if (newPlacementIndex >= totalShipsToPlace) {
-            if (gameMode === 'multiplayer') { if (activePlayer === 1) setGameState('transition'); else { setActivePlayer(1); setGameState('battle'); } }
-            else setGameState('battle');
-        }
+      setProvisionalPlacement({ row, col, ship: shipToPlace, isHorizontal });
+      setHoveredCell(null);
+      setPreviewCells([]);
     } else {
-        setFeedback(t('cannotPlaceShip', { shipName: shipToPlace.name }));
+      setFeedback(t('cannotPlaceShip', { shipName: shipToPlace.name }));
     }
   };
+  
+  const handleConfirmPlacement = () => {
+      if (!provisionalPlacement) return;
+      
+      const { row, col, ship, isHorizontal } = provisionalPlacement;
+      const currentGrid = activePlayer === 1 ? player1Grid : player2Grid;
+      const setGrid = activePlayer === 1 ? setPlayer1Grid : setPlayer2Grid;
+      const setShips = activePlayer === 1 ? setPlayer1Ships : setPlayer2Ships;
+      
+      setGrid(placeShip(currentGrid, row, col, ship, isHorizontal));
+      setShips(s => s.map((s, i) => i === placementIndex ? {...s, placed: true} : s));
+      const newPlacementIndex = placementIndex + 1;
+      setPlacementIndex(newPlacementIndex);
+      setProvisionalPlacement(null);
+
+      if (newPlacementIndex >= totalShipsToPlace) {
+          if (gameMode === 'multiplayer') { if (activePlayer === 1) setGameState('transition'); else { setActivePlayer(1); setGameState('battle'); } }
+          else setGameState('battle');
+      }
+  };
+
+  const handleCancelPlacement = () => {
+      setProvisionalPlacement(null);
+  };
+
 
   const updateSunkShips = (grid, ships) => {
     const newGrid = grid.map(r => r.map(cell => ({...cell})));
@@ -850,7 +901,7 @@ const Game = ({ setView, gameMode, settings, t }) => {
   };
   
   const handleGridMouseMove = (e) => {
-    if (gameState !== 'placement') return;
+    if (gameState !== 'placement' || provisionalPlacement) return;
     const target = e.target;
     if (target.classList.contains('cell')) {
         const row = parseInt(target.dataset.row ?? '', 10); const col = parseInt(target.dataset.col ?? '', 10);
@@ -878,6 +929,8 @@ const Game = ({ setView, gameMode, settings, t }) => {
       if (gameMode === 'multiplayer' && activePlayer === 1) setGameState('transition');
       else { setGameState('battle'); if (activePlayer === 2) setActivePlayer(1); }
   }
+  
+  const currentProvisionalPlacement = provisionalPlacement ? {...provisionalPlacement, isHorizontal: placementOrientation === 'horizontal' } : null;
 
   return (
     <div className="game-view-wrapper">
@@ -889,20 +942,27 @@ const Game = ({ setView, gameMode, settings, t }) => {
         <h1>{t('appTitle')}</h1>
         <div className="status-container">
             <div id="game-status">{feedback || status}</div>
-            <div className="actions">
-                
-            </div>
         </div>
         <div className="game-container">
             <div className="board-container">
             <h2>{getBoardTitle()}</h2>
             {gameState === 'placement' && !noShipsToPlace ? (
-                <GridDisplay grid={playerGrid} gridSize={gridSize} onCellClick={handleGridClickPlacement} isEnemy={false} onGridMouseMove={handleGridMouseMove} onGridLeave={() => setHoveredCell(null)} previewCells={previewCells} gameState={gameState} alwaysShowShips={true} showCoordinates={showCoordinates} />
+                <GridDisplay grid={playerGrid} gridSize={gridSize} onCellClick={handleGridClickPlacement} isEnemy={false} onGridMouseMove={handleGridMouseMove} onGridLeave={() => setHoveredCell(null)} previewCells={previewCells} provisionalPlacement={currentProvisionalPlacement} gameState={gameState} alwaysShowShips={true} showCoordinates={showCoordinates} />
             ) : (
-                <GridDisplay grid={enemyGrid} gridSize={gridSize} onCellClick={gameState === 'battle' && (gameMode === 'single' ? activePlayer === 1 : true) ? handleGridClickBattle : () => {}} isEnemy={true} onGridMouseMove={() => {}} onGridLeave={() => {}} previewCells={[]} gameState={gameState} alwaysShowShips={false} showCoordinates={showCoordinates} />
+                <GridDisplay grid={enemyGrid} gridSize={gridSize} onCellClick={gameState === 'battle' && (gameMode === 'single' ? activePlayer === 1 : true) ? handleGridClickBattle : () => {}} isEnemy={true} onGridMouseMove={() => {}} onGridLeave={() => {}} previewCells={[]} provisionalPlacement={null} gameState={gameState} alwaysShowShips={false} showCoordinates={showCoordinates} />
             )}
             <div className="board-actions">
-                {gameState === 'placement' && !noShipsToPlace && <button onClick={togglePlacementOrientation}>{t('rotateShip')} ({placementOrientation === 'horizontal' ? t('horizontal') : t('vertical')})</button>}
+                {gameState === 'placement' && !noShipsToPlace && (
+                    <>
+                        {provisionalPlacement ? (
+                            <>
+                                <button onClick={handleConfirmPlacement}>{t('confirmPlacement')}</button>
+                                <button onClick={handleCancelPlacement} className="cancel-button">{t('cancel')}</button>
+                            </>
+                        ) : null}
+                        <button onClick={togglePlacementOrientation}>{t('rotateShip')} ({placementOrientation === 'horizontal' ? t('horizontal') : t('vertical')})</button>
+                    </>
+                )}
                 {gameState === 'battle' && <button onClick={() => setShowFleetModal(true)}>{t('viewMyFleet')}</button>}
             </div>
             </div>
