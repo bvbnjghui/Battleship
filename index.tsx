@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
 
@@ -39,8 +38,22 @@ const translations = {
     
     // Records Page
     recordsTitle: { en: 'Game Records (Single Player Only)', zh: '遊玩紀錄 (僅限單人模式)' },
-    wins: { en: 'Wins:', zh: '勝利:' },
-    losses: { en: 'Losses:', zh: '失敗:' },
+    summary: { en: 'Summary', zh: '總覽' },
+    wins: { en: 'Wins', zh: '勝利' },
+    losses: { en: 'Losses', zh: '失敗' },
+    statsByDifficulty: { en: 'Stats by Difficulty', zh: '各難度統計' },
+    totalGames: { en: 'Total', zh: '總場次' },
+    winRate: { en: 'Win Rate', zh: '勝率' },
+    avgTurns: { en: 'Avg. Turns', zh: '平均回合數' },
+    recentGames: { en: 'Recent Games', zh: '最近對局' },
+    date: { en: 'Date', zh: '日期' },
+    result: { en: 'Result', zh: '結果' },
+    difficulty: { en: 'Difficulty', zh: '難度' },
+    turns: { en: 'Turns', zh: '回合數' },
+    accuracy: { en: 'Accuracy', zh: '命中率' },
+    win: { en: 'Win', zh: '勝利' },
+    loss: { en: 'Loss', zh: '失敗' },
+    noRecords: { en: 'No game records yet. Play a single-player game to see your stats!', zh: '尚無遊玩紀錄。遊玩一局單人遊戲來查看您的統計資料！' },
     clearRecords: { en: 'Clear Records', zh: '清除紀錄' },
     confirmClearRecords: { en: 'Are you sure you want to clear all game records?', zh: '您確定要清除所有遊玩紀錄嗎？' },
     
@@ -48,6 +61,10 @@ const translations = {
     settingsTitle: { en: 'Game Settings', zh: '遊戲設定' },
     gridSize: { en: 'Grid Size:', zh: '棋盤大小:' },
     attackDelay: { en: 'Post-Attack Display Time:', zh: '攻擊後結果顯示時間:' },
+    aiDifficulty: { en: 'AI Difficulty', zh: 'AI 難度' },
+    easy: { en: 'Easy', zh: '簡單' },
+    normal: { en: 'Normal', zh: '普通' },
+    hard: { en: 'Hard', zh: '困難' },
     shipCounts: { en: 'Ship Counts', zh: '船艦數量' },
     length: { en: 'Length:', zh: '長度:' },
     saveSettings: { en: 'Save Settings', zh: '儲存設定' },
@@ -105,6 +122,7 @@ const DEFAULT_SETTINGS = {
     gridSize: 10,
     attackDelay: 1000,
     shipCounts: SHIP_CONFIG.reduce((acc, ship) => ({ ...acc, [ship.name]: 1 }), {}),
+    aiDifficulty: 'normal',
 };
 
 const createEmptyGrid = (gridSize) => Array.from({ length: gridSize }, () => Array.from({ length: gridSize }, () => ({ state: CELL_STATE.EMPTY, shipName: null })));
@@ -195,32 +213,136 @@ const Instructions = ({ setView, t }) => (
       <li><strong>{t('instructionsMiss')}</strong> {t('instructionsMissText')}</li>
       <li><strong>{t('instructionsSunk')}</strong> {t('instructionsSunkText')}</li>
     </ul>
-    <button onClick={() => setView('menu')}>{t('backToMenu')}</button>
+    <button className="button-group" onClick={() => setView('menu')}>{t('backToMenu')}</button>
   </div>
 );
 
 const Records = ({ setView, t }) => {
-    const [stats, setStats] = useState({ wins: 0, losses: 0 });
+    const [records, setRecords] = useState({ summary: { wins: 0, losses: 0 }, history: [] });
 
     useEffect(() => {
-        const savedStats = localStorage.getItem('battleshipStats');
-        if (savedStats) setStats(JSON.parse(savedStats));
+        const savedHistory = localStorage.getItem('battleshipGameHistory');
+        if (savedHistory) {
+            const history = JSON.parse(savedHistory);
+            const wins = history.filter(r => r.result === 'win').length;
+            const losses = history.filter(r => r.result === 'loss').length;
+            setRecords({ summary: { wins, losses }, history });
+        }
     }, []);
 
     const clearRecords = () => {
         if (window.confirm(t('confirmClearRecords'))) {
-            localStorage.removeItem('battleshipStats');
-            setStats({ wins: 0, losses: 0 });
+            localStorage.removeItem('battleshipGameHistory');
+            setRecords({ summary: { wins: 0, losses: 0 }, history: [] });
         }
     };
+
+    const formatDate = (dateString) => {
+        return new Date(dateString).toLocaleString();
+    };
+
+    const statsByDifficulty = ['easy', 'normal', 'hard'].reduce((acc, diff) => {
+        acc[diff] = { wins: 0, losses: 0, turns: 0, total: 0 };
+        return acc;
+    }, {});
+
+    records.history.forEach(record => {
+        const diff = record.aiDifficulty;
+        if (statsByDifficulty[diff]) {
+            statsByDifficulty[diff].total++;
+            statsByDifficulty[diff].turns += record.turns;
+            if (record.result === 'win') {
+                statsByDifficulty[diff].wins++;
+            } else {
+                statsByDifficulty[diff].losses++;
+            }
+        }
+    });
 
     return (
         <div className="page-container">
             <h2>{t('recordsTitle')}</h2>
-            <p><strong>{t('wins')}</strong> {stats.wins}</p>
-            <p><strong>{t('losses')}</strong> {stats.losses}</p>
-            <button onClick={clearRecords}>{t('clearRecords')}</button>
-            <button onClick={() => setView('menu')}>{t('backToMenu')}</button>
+
+            <div className="records-summary">
+                <div className="records-summary-item">
+                    {t('wins')}
+                    <span>{records.summary.wins}</span>
+                </div>
+                <div className="records-summary-item">
+                    {t('losses')}
+                    <span>{records.summary.losses}</span>
+                </div>
+            </div>
+
+            <h3>{t('statsByDifficulty')}</h3>
+            <div className="records-table-container">
+                 <table className="records-table">
+                    <thead>
+                        <tr>
+                            <th>{t('difficulty')}</th>
+                            <th>{t('wins')}</th>
+                            <th>{t('losses')}</th>
+                            <th>{t('totalGames')}</th>
+                            <th>{t('winRate')}</th>
+                            <th>{t('avgTurns')}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {Object.keys(statsByDifficulty).map(diffKey => {
+                            const stats = statsByDifficulty[diffKey];
+                            const winRate = stats.total > 0 ? (stats.wins / stats.total) * 100 : 0;
+                            const avgTurns = stats.total > 0 ? stats.turns / stats.total : 0;
+                            return (
+                                <tr key={diffKey}>
+                                    <td>{t(diffKey)}</td>
+                                    <td>{stats.wins}</td>
+                                    <td>{stats.losses}</td>
+                                    <td>{stats.total}</td>
+                                    <td>{winRate.toFixed(1)}%</td>
+                                    <td>{avgTurns.toFixed(1)}</td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+
+            <h3>{t('recentGames')}</h3>
+            <div className="records-table-container">
+                {records.history.length > 0 ? (
+                    <table className="records-table">
+                        <thead>
+                            <tr>
+                                <th>{t('date')}</th>
+                                <th>{t('result')}</th>
+                                <th>{t('difficulty')}</th>
+                                <th>{t('turns')}</th>
+                                <th>{t('accuracy')}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {records.history.map((record, index) => (
+                                <tr key={index}>
+                                    <td>{formatDate(record.date)}</td>
+                                    <td className={record.result === 'win' ? 'result-win' : 'result-loss'}>
+                                        {t(record.result)}
+                                    </td>
+                                    <td>{t(record.aiDifficulty)}</td>
+                                    <td>{record.turns}</td>
+                                    <td>{record.accuracy.toFixed(1)}%</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                ) : (
+                    <p>{t('noRecords')}</p>
+                )}
+            </div>
+
+            <div className="button-group">
+                {records.history.length > 0 && <button onClick={clearRecords}>{t('clearRecords')}</button>}
+                <button onClick={() => setView('menu')}>{t('backToMenu')}</button>
+            </div>
         </div>
     );
 };
@@ -254,6 +376,14 @@ const Settings = ({ initialSettings, onSave, setView, t }) => {
              <div className="setting-row">
                 <label>{t('attackDelay')} {(settings.attackDelay / 1000).toFixed(1)}s</label>
                 <input type="range" min="500" max="3000" step="100" value={settings.attackDelay} onChange={e => setSettings({...settings, attackDelay: parseInt(e.target.value)})} />
+            </div>
+             <div className="setting-row">
+                <label>{t('aiDifficulty')}</label>
+                <div className="button-group-toggle">
+                    <button className={settings.aiDifficulty === 'easy' ? 'active' : ''} onClick={() => setSettings(s => ({...s, aiDifficulty: 'easy'}))}>{t('easy')}</button>
+                    <button className={settings.aiDifficulty === 'normal' ? 'active' : ''} onClick={() => setSettings(s => ({...s, aiDifficulty: 'normal'}))}>{t('normal')}</button>
+                    <button className={settings.aiDifficulty === 'hard' ? 'active' : ''} onClick={() => setSettings(s => ({...s, aiDifficulty: 'hard'}))}>{t('hard')}</button>
+                </div>
             </div>
             <h3>{t('shipCounts')}</h3>
             {SHIP_CONFIG.map(ship => (
@@ -328,7 +458,7 @@ const GameOverModal = ({ winnerName, onBackToMenu, t }) => (
 );
 
 const Game = ({ setView, gameMode, settings, t }) => {
-  const { gridSize, attackDelay } = settings;
+  const { gridSize, attackDelay, aiDifficulty } = settings;
   const initialShips = useCallback(() => createInitialShips(settings, t), [settings, t]);
   const emptyGrid = useCallback(() => createEmptyGrid(gridSize), [gridSize]);
 
@@ -349,6 +479,9 @@ const Game = ({ setView, gameMode, settings, t }) => {
   const [isPaused, setIsPaused] = useState(false);
   const [winnerName, setWinnerName] = useState('');
   const [aiTargetingInfo, setAiTargetingInfo] = useState({ mode: 'hunting', hits: [] });
+  // New states for detailed stats
+  const [player1Shots, setPlayer1Shots] = useState(0);
+  const [player1Hits, setPlayer1Hits] = useState(0);
 
   const shipsToPlace = activePlayer === 1 ? player1Ships : player2Ships;
   const totalShipsToPlace = shipsToPlace.length;
@@ -357,7 +490,6 @@ const Game = ({ setView, gameMode, settings, t }) => {
     const ships = initialShips();
     let aiGrid = emptyGrid();
 
-    // Sort ships from largest to smallest to make placement easier
     const shipsToPlace = [...ships].sort((a, b) => b.length - a.length);
     const placedShips = [];
 
@@ -365,7 +497,6 @@ const Game = ({ setView, gameMode, settings, t }) => {
         let placed = false;
         let attempts = 0;
 
-        // 1. Attempt STRATEGIC placement with buffer
         while (!placed && attempts < 150) {
             const isHorizontal = Math.random() < 0.5;
             const row = Math.floor(Math.random() * gridSize);
@@ -378,9 +509,7 @@ const Game = ({ setView, gameMode, settings, t }) => {
             attempts++;
         }
 
-        // 2. If strategic failed, FALLBACK to standard placement for THIS SHIP ONLY
         if (!placed) {
-            console.warn(`Strategic AI placement failed for ${ship.name}, falling back to standard.`);
             attempts = 0;
             while (!placed && attempts < 250) {
                 const isHorizontal = Math.random() < 0.5;
@@ -397,11 +526,10 @@ const Game = ({ setView, gameMode, settings, t }) => {
         
         if (!placed) {
              console.error(`CRITICAL: Could not place AI ship ${ship.name}. The game settings might be impossible.`);
-             placedShips.push({ ...ship, placed: false }); // Mark as unplaced
+             placedShips.push({ ...ship, placed: false });
         }
     }
     
-    // The `placedShips` are out of order. We need to respect the original order from `initialShips`.
     const finalShips = ships.map(originalShip => 
         placedShips.find(ps => ps.id === originalShip.id) || originalShip
     );
@@ -417,10 +545,10 @@ const Game = ({ setView, gameMode, settings, t }) => {
     let row, col;
     const { mode, hits } = aiTargetingInfo;
 
-    // TARGETING MODE LOGIC
-    if (mode === 'targeting' && hits.length > 0) {
-        // FIX: Explicitly type the Set to avoid type errors on `targetCoord.split` later.
-        const potentialTargets = new Set<string>();
+    const isTargeting = (aiDifficulty === 'normal' || aiDifficulty === 'hard') && mode === 'targeting' && hits.length > 0;
+
+    if (isTargeting) {
+        const potentialTargets = new Set();
         const addTarget = (r, c) => {
             if (r >= 0 && r < gridSize && c >= 0 && c < gridSize && !aiShots.has(`${r},${c}`)) {
                 potentialTargets.add(`${r},${c}`);
@@ -428,14 +556,9 @@ const Game = ({ setView, gameMode, settings, t }) => {
         };
 
         if (hits.length === 1) {
-            // First hit, check all 4 directions
             const { row: r, col: c } = hits[0];
-            addTarget(r - 1, c);
-            addTarget(r + 1, c);
-            addTarget(r, c - 1);
-            addTarget(r, c + 1);
+            addTarget(r - 1, c); addTarget(r + 1, c); addTarget(r, c - 1); addTarget(r, c + 1);
         } else {
-            // More than one hit, determine axis and attack ends
             hits.sort((a, b) => a.row - b.row || a.col - b.col);
             const firstHit = hits[0];
             const lastHit = hits[hits.length - 1];
@@ -453,20 +576,42 @@ const Game = ({ setView, gameMode, settings, t }) => {
         const validTargets = Array.from(potentialTargets);
         if (validTargets.length > 0) {
             const targetCoord = validTargets[Math.floor(Math.random() * validTargets.length)];
-            [row, col] = targetCoord.split(',').map(Number);
+            [row, col] = (targetCoord as string).split(',').map(Number);
         } else {
-            // Fallback: This can happen if a ship is surrounded. Reset and hunt.
             setAiTargetingInfo({ mode: 'hunting', hits: [] });
-            // Let the hunting logic below run
         }
     }
 
-    // HUNTING MODE LOGIC (or fallback from targeting)
     if (row === undefined || col === undefined) {
-        do {
-            row = Math.floor(Math.random() * gridSize);
-            col = Math.floor(Math.random() * gridSize);
-        } while (aiShots.has(`${row},${col}`));
+        let availableCells = [];
+        if (aiDifficulty === 'hard') {
+            const primaryPattern = [];
+            const secondaryPattern = [];
+            for (let r = 0; r < gridSize; r++) {
+                for (let c = 0; c < gridSize; c++) {
+                    if (!aiShots.has(`${r},${c}`)) {
+                        if ((r + c) % 2 === 0) primaryPattern.push({ r, c });
+                        else secondaryPattern.push({ r, c });
+                    }
+                }
+            }
+            availableCells = primaryPattern.length > 0 ? primaryPattern : secondaryPattern;
+        } else {
+            for (let r = 0; r < gridSize; r++) {
+                for (let c = 0; c < gridSize; c++) {
+                    if (!aiShots.has(`${r},${c}`)) availableCells.push({ r, c });
+                }
+            }
+        }
+        
+        if (availableCells.length > 0) {
+            const target = availableCells[Math.floor(Math.random() * availableCells.length)];
+            row = target.r;
+            col = target.c;
+        } else {
+            console.error("AI has no more moves!");
+            return;
+        }
     }
 
     setAiShots(s => new Set(s).add(`${row},${col}`));
@@ -495,20 +640,30 @@ const Game = ({ setView, gameMode, settings, t }) => {
         setFeedback(t('aiMiss'));
     }
     
-    // Update targeting info based on shot result
-    if (justSunk) {
-        setAiTargetingInfo({ mode: 'hunting', hits: [] });
-    } else if (wasHit) {
-        setAiTargetingInfo(prev => ({
-            mode: 'targeting',
-            hits: [...prev.hits, { row, col }],
-        }));
+    if (aiDifficulty !== 'easy') {
+        const finalGrid = justSunk ? updateSunkShips(newGrid, newShips) : newGrid;
+        if (justSunk) {
+            const remainingHits = [];
+            for(let r=0; r<gridSize; r++) {
+                for(let c=0; c<gridSize; c++) {
+                    if(finalGrid[r][c].state === CELL_STATE.HIT) {
+                         remainingHits.push({row: r, col: c});
+                    }
+                }
+            }
+            if (remainingHits.length > 0) setAiTargetingInfo({ mode: 'targeting', hits: remainingHits });
+            else setAiTargetingInfo({ mode: 'hunting', hits: [] });
+        } else if (wasHit) {
+            setAiTargetingInfo(prev => ({ mode: 'targeting', hits: [...prev.hits, { row, col }] }));
+        }
+        setPlayer1Grid(finalGrid);
+    } else {
+        setPlayer1Grid(justSunk ? updateSunkShips(newGrid, newShips) : newGrid);
     }
-
-    setPlayer1Grid(justSunk ? updateSunkShips(newGrid, newShips) : newGrid);
+    
     setPlayer1Ships(newShips);
     setGameState('showing_attack_result');
-  }, [gridSize, aiShots, player1Grid, player1Ships, t, aiTargetingInfo]);
+  }, [gridSize, aiShots, player1Grid, player1Ships, t, aiTargetingInfo, aiDifficulty]);
   
   useEffect(() => { 
     if (gameState === 'turn_switching' && gameMode === 'single' && activePlayer === 2 && !isPaused) {
@@ -541,12 +696,21 @@ const Game = ({ setView, gameMode, settings, t }) => {
 
   useEffect(() => {
     if (gameState === 'game_over' && gameMode === 'single') {
-        const savedStats = JSON.parse(localStorage.getItem('battleshipStats') || '{ "wins": 0, "losses": 0 }');
         const playerWon = player2Ships.every(s => s.hits >= s.length);
-        if (playerWon) savedStats.wins++; else savedStats.losses++;
-        localStorage.setItem('battleshipStats', JSON.stringify(savedStats));
+        const newRecord = {
+            date: new Date().toISOString(),
+            result: playerWon ? 'win' : 'loss',
+            aiDifficulty: settings.aiDifficulty,
+            turns: player1Shots,
+            accuracy: player1Shots > 0 ? (player1Hits / player1Shots) * 100 : 0,
+        };
+
+        const savedHistory = localStorage.getItem('battleshipGameHistory');
+        const history = savedHistory ? JSON.parse(savedHistory) : [];
+        const newHistory = [newRecord, ...history].slice(0, 20); // Keep last 20 games
+        localStorage.setItem('battleshipGameHistory', JSON.stringify(newHistory));
     }
-  }, [gameState, gameMode, player2Ships]);
+  }, [gameState, gameMode, player2Ships, settings.aiDifficulty, player1Shots, player1Hits]);
 
   useEffect(() => {
     const player1Name = gameMode === 'single' ? t('you') : t('player') + ' 1';
@@ -631,11 +795,14 @@ const Game = ({ setView, gameMode, settings, t }) => {
     const cell = targetGrid[row][col];
     if ([CELL_STATE.HIT, CELL_STATE.MISS, CELL_STATE.SUNK].includes(cell.state)) return;
 
+    if(activePlayer === 1) setPlayer1Shots(s => s + 1);
+
     let newGrid = targetGrid.map(r => r.map(c => ({...c})));
     let newShips = JSON.parse(JSON.stringify(targetShips));
     let message = ''; let justSunk = false;
     
     if (cell.state === CELL_STATE.SHIP) {
+      if(activePlayer === 1) setPlayer1Hits(h => h + 1);
       newGrid[row][col].state = CELL_STATE.HIT;
       const shipIndex = newShips.findIndex(s => s.name === cell.shipName);
       if(shipIndex !== -1) {
@@ -705,7 +872,7 @@ const Game = ({ setView, gameMode, settings, t }) => {
             <div className="board-container">
             <h2>{getBoardTitle()}</h2>
             {gameState === 'placement' && !noShipsToPlace ? (
-                <GridDisplay grid={playerGrid} gridSize={gridSize} onCellClick={handleGridClickPlacement} isEnemy={false} onGridMouseMove={handleGridMouseMove} onGridLeave={() => setHoveredCell(null)} previewCells={previewCells} gameState={gameState} alwaysShowShips={false} />
+                <GridDisplay grid={playerGrid} gridSize={gridSize} onCellClick={handleGridClickPlacement} isEnemy={false} onGridMouseMove={handleGridMouseMove} onGridLeave={() => setHoveredCell(null)} previewCells={previewCells} gameState={gameState} alwaysShowShips={true} />
             ) : (
                 <GridDisplay grid={enemyGrid} gridSize={gridSize} onCellClick={gameState === 'battle' && (gameMode === 'single' ? activePlayer === 1 : true) ? handleGridClickBattle : () => {}} isEnemy={true} onGridMouseMove={() => {}} onGridLeave={() => {}} previewCells={[]} gameState={gameState} alwaysShowShips={false} />
             )}
@@ -733,15 +900,7 @@ const App = () => {
         if (savedSettings) {
             try {
                 const parsed = JSON.parse(savedSettings);
-                const defaultShipKeys = Object.keys(DEFAULT_SETTINGS.shipCounts);
-                const loadedShipKeys = Object.keys(parsed.shipCounts || {});
-                if (loadedShipKeys.length > 0 && loadedShipKeys.every(k => defaultShipKeys.includes(k))) {
-                     setSettings(prev => ({...DEFAULT_SETTINGS, ...parsed}));
-                } else {
-                    // Handles migration from old settings format
-                    const { shipCounts, ...otherSettings } = parsed;
-                    setSettings(prev => ({...DEFAULT_SETTINGS, ...otherSettings }));
-                }
+                setSettings(prev => ({...DEFAULT_SETTINGS, ...parsed}));
             } catch (e) { console.error("Failed to parse settings", e); }
         }
     }, []);
