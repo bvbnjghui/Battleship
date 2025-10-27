@@ -70,6 +70,9 @@ const translations = {
     saveSettings: { en: 'Save Settings', zh: '儲存設定' },
     resetToDefault: { en: 'Reset to Default', zh: '重設為預設' },
     confirmResetSettings: { en: 'Are you sure you want to reset all settings to their default values?', zh: '您確定要重設所有設定嗎？' },
+    showCoordinates: { en: 'Show Coordinates', zh: '顯示座標'},
+    on: { en: 'On', zh: '開啟'},
+    off: { en: 'Off', zh: '關閉'},
 
     // Game Screen
     player: { en: 'Player', zh: '玩家' },
@@ -123,6 +126,7 @@ const DEFAULT_SETTINGS = {
     attackDelay: 1000,
     shipCounts: SHIP_CONFIG.reduce((acc, ship) => ({ ...acc, [ship.name]: 1 }), {}),
     aiDifficulty: 'normal',
+    showCoordinates: false,
 };
 
 const createEmptyGrid = (gridSize) => Array.from({ length: gridSize }, () => Array.from({ length: gridSize }, () => ({ state: CELL_STATE.EMPTY, shipName: null })));
@@ -377,6 +381,13 @@ const Settings = ({ initialSettings, onSave, setView, t }) => {
                 <label>{t('attackDelay')} {(settings.attackDelay / 1000).toFixed(1)}s</label>
                 <input type="range" min="500" max="3000" step="100" value={settings.attackDelay} onChange={e => setSettings({...settings, attackDelay: parseInt(e.target.value)})} />
             </div>
+            <div className="setting-row">
+                <label>{t('showCoordinates')}</label>
+                <div className="button-group-toggle">
+                    <button className={settings.showCoordinates ? 'active' : ''} onClick={() => setSettings(s => ({...s, showCoordinates: true}))}>{t('on')}</button>
+                    <button className={!settings.showCoordinates ? 'active' : ''} onClick={() => setSettings(s => ({...s, showCoordinates: false}))}>{t('off')}</button>
+                </div>
+            </div>
              <div className="setting-row">
                 <label>{t('aiDifficulty')}</label>
                 <div className="button-group-toggle">
@@ -401,30 +412,44 @@ const Settings = ({ initialSettings, onSave, setView, t }) => {
     );
 };
 
-const GridDisplay = ({ grid, gridSize, onCellClick, isEnemy, onGridMouseMove, onGridLeave, previewCells, gameState, alwaysShowShips }) => {
+const GridDisplay = ({ grid, gridSize, onCellClick, isEnemy, onGridMouseMove, onGridLeave, previewCells, gameState, alwaysShowShips, showCoordinates }) => {
     const previewCoords = new Map(previewCells.map(c => [c.coord, c.possible]));
+    const topCoords = Array.from({ length: gridSize }, (_, i) => String.fromCharCode(65 + i));
+    const leftCoords = Array.from({ length: gridSize }, (_, i) => i + 1);
 
     return (
-      <div className={`grid ${isEnemy ? 'enemy-board' : 'player-board'}`} style={{ '--grid-size': gridSize } as React.CSSProperties} onMouseMove={onGridMouseMove} onMouseLeave={onGridLeave}>
-        {grid.map((row, rowIndex) =>
-          row.map((cell, colIndex) => {
-            const coord = `${rowIndex}-${colIndex}`;
-            const isPreview = !isEnemy && previewCoords.has(coord);
-            const previewClass = isPreview ? (previewCoords.get(coord) ? 'preview-possible' : 'preview-impossible') : '';
-            const cellState = cell.state !== CELL_STATE.EMPTY && (isEnemy ? (cell.state !== CELL_STATE.SHIP) : (alwaysShowShips || gameState === 'placement' || cell.state !== CELL_STATE.SHIP)) ? cell.state : '';
-            return (<div key={coord} data-row={rowIndex} data-col={colIndex} className={`cell ${cellState} ${previewClass}`} onClick={() => onCellClick(rowIndex, colIndex)} />);
-          })
+      <div className={`grid-wrapper ${showCoordinates ? 'with-coords' : ''}`} style={{ '--grid-size': gridSize } as React.CSSProperties}>
+        {showCoordinates && (
+            <>
+                <div className="coords-top">
+                    {topCoords.map(label => <div key={label} className="coord-label-top">{label}</div>)}
+                </div>
+                <div className="coords-left">
+                    {leftCoords.map(label => <div key={label} className="coord-label-left">{label}</div>)}
+                </div>
+            </>
         )}
+        <div className={`grid ${isEnemy ? 'enemy-board' : 'player-board'}`} onMouseMove={onGridMouseMove} onMouseLeave={onGridLeave}>
+          {grid.map((row, rowIndex) =>
+            row.map((cell, colIndex) => {
+              const coord = `${rowIndex}-${colIndex}`;
+              const isPreview = !isEnemy && previewCoords.has(coord);
+              const previewClass = isPreview ? (previewCoords.get(coord) ? 'preview-possible' : 'preview-impossible') : '';
+              const cellState = cell.state !== CELL_STATE.EMPTY && (isEnemy ? (cell.state !== CELL_STATE.SHIP) : (alwaysShowShips || gameState === 'placement' || cell.state !== CELL_STATE.SHIP)) ? cell.state : '';
+              return (<div key={coord} data-row={rowIndex} data-col={colIndex} className={`cell ${cellState} ${previewClass}`} onClick={() => onCellClick(rowIndex, colIndex)} />);
+            })
+          )}
+        </div>
       </div>
     );
 };
 
-const FleetModal = ({ grid, gridSize, onClose, gameState, t }) => (
+const FleetModal = ({ grid, gridSize, onClose, gameState, t, showCoordinates }) => (
     <div className="modal-overlay" onClick={onClose}>
         <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <button className="modal-close" onClick={onClose}>&times;</button>
             <h2>{t('yourFleet')}</h2>
-            <GridDisplay grid={grid} gridSize={gridSize} onCellClick={() => {}} isEnemy={false} onGridMouseMove={() => {}} onGridLeave={() => {}} previewCells={[]} gameState={gameState} alwaysShowShips={true} />
+            <GridDisplay grid={grid} gridSize={gridSize} onCellClick={() => {}} isEnemy={false} onGridMouseMove={() => {}} onGridLeave={() => {}} previewCells={[]} gameState={gameState} alwaysShowShips={true} showCoordinates={showCoordinates} />
         </div>
     </div>
 );
@@ -458,7 +483,7 @@ const GameOverModal = ({ winnerName, onBackToMenu, t }) => (
 );
 
 const Game = ({ setView, gameMode, settings, t }) => {
-  const { gridSize, attackDelay, aiDifficulty } = settings;
+  const { gridSize, attackDelay, aiDifficulty, showCoordinates } = settings;
   const initialShips = useCallback(() => createInitialShips(settings, t), [settings, t]);
   const emptyGrid = useCallback(() => createEmptyGrid(gridSize), [gridSize]);
 
@@ -548,7 +573,7 @@ const Game = ({ setView, gameMode, settings, t }) => {
     const isTargeting = (aiDifficulty === 'normal' || aiDifficulty === 'hard') && mode === 'targeting' && hits.length > 0;
 
     if (isTargeting) {
-        const potentialTargets = new Set();
+        const potentialTargets = new Set<string>();
         const addTarget = (r, c) => {
             if (r >= 0 && r < gridSize && c >= 0 && c < gridSize && !aiShots.has(`${r},${c}`)) {
                 potentialTargets.add(`${r},${c}`);
@@ -576,7 +601,7 @@ const Game = ({ setView, gameMode, settings, t }) => {
         const validTargets = Array.from(potentialTargets);
         if (validTargets.length > 0) {
             const targetCoord = validTargets[Math.floor(Math.random() * validTargets.length)];
-            [row, col] = (targetCoord as string).split(',').map(Number);
+            [row, col] = targetCoord.split(',').map(Number);
         } else {
             setAiTargetingInfo({ mode: 'hunting', hits: [] });
         }
@@ -860,7 +885,7 @@ const Game = ({ setView, gameMode, settings, t }) => {
         {gameState === 'game_over' && <GameOverModal winnerName={winnerName} onBackToMenu={() => setView('menu')} t={t} />}
         {gameState !== 'game_over' && <button className="pause-button" onClick={() => setIsPaused(true)}>❚❚</button>}
 
-        {showFleetModal && <FleetModal grid={player1Grid} gridSize={gridSize} onClose={() => setShowFleetModal(false)} gameState={gameState} t={t}/>}
+        {showFleetModal && <FleetModal grid={player1Grid} gridSize={gridSize} onClose={() => setShowFleetModal(false)} gameState={gameState} t={t} showCoordinates={showCoordinates} />}
         <h1>{t('appTitle')}</h1>
         <div className="status-container">
             <div id="game-status">{feedback || status}</div>
@@ -872,9 +897,9 @@ const Game = ({ setView, gameMode, settings, t }) => {
             <div className="board-container">
             <h2>{getBoardTitle()}</h2>
             {gameState === 'placement' && !noShipsToPlace ? (
-                <GridDisplay grid={playerGrid} gridSize={gridSize} onCellClick={handleGridClickPlacement} isEnemy={false} onGridMouseMove={handleGridMouseMove} onGridLeave={() => setHoveredCell(null)} previewCells={previewCells} gameState={gameState} alwaysShowShips={true} />
+                <GridDisplay grid={playerGrid} gridSize={gridSize} onCellClick={handleGridClickPlacement} isEnemy={false} onGridMouseMove={handleGridMouseMove} onGridLeave={() => setHoveredCell(null)} previewCells={previewCells} gameState={gameState} alwaysShowShips={true} showCoordinates={showCoordinates} />
             ) : (
-                <GridDisplay grid={enemyGrid} gridSize={gridSize} onCellClick={gameState === 'battle' && (gameMode === 'single' ? activePlayer === 1 : true) ? handleGridClickBattle : () => {}} isEnemy={true} onGridMouseMove={() => {}} onGridLeave={() => {}} previewCells={[]} gameState={gameState} alwaysShowShips={false} />
+                <GridDisplay grid={enemyGrid} gridSize={gridSize} onCellClick={gameState === 'battle' && (gameMode === 'single' ? activePlayer === 1 : true) ? handleGridClickBattle : () => {}} isEnemy={true} onGridMouseMove={() => {}} onGridLeave={() => {}} previewCells={[]} gameState={gameState} alwaysShowShips={false} showCoordinates={showCoordinates} />
             )}
             <div className="board-actions">
                 {gameState === 'placement' && !noShipsToPlace && <button onClick={togglePlacementOrientation}>{t('rotateShip')} ({placementOrientation === 'horizontal' ? t('horizontal') : t('vertical')})</button>}

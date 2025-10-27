@@ -6,9 +6,10 @@
   <title>海戰棋 (Battleship)</title>
   <style>
     :root {
-      /* --grid-size is now set via inline style */
-      --cell-size: min(8vw, 40px);
+      /* --grid-size is now set via inline style on grid-wrapper */
+      /* --cell-size is now calculated dynamically in .grid-wrapper to ensure responsiveness */
       --gap: 2px;
+      --coord-size: 30px;
       --board-color: #2c3e50;
       --water-color: #3498db;
       --water-hover-color: #5dade2;
@@ -100,6 +101,67 @@
       display: flex;
       justify-content: center;
       align-items: center;
+    }
+
+    .grid-wrapper {
+        position: relative;
+        display: inline-block;
+
+        /* Dynamically calculate cell size to fit the screen */
+        --max-cell-size: 40px;
+        /* Default calculation for grid WITHOUT coordinates */
+        --calculated-cell-size: calc((90vw - (var(--grid-size) - 1) * var(--gap)) / var(--grid-size));
+        --cell-size: min(var(--max-cell-size), var(--calculated-cell-size));
+    }
+
+    .grid-wrapper.with-coords {
+        padding-top: var(--coord-size);
+        padding-left: var(--coord-size);
+        /* Override calculation for grid WITH coordinates */
+        --calculated-cell-size-with-coords: calc((90vw - var(--coord-size) - (var(--grid-size) - 1) * var(--gap)) / var(--grid-size));
+        --cell-size: min(var(--max-cell-size), var(--calculated-cell-size-with-coords));
+    }
+
+
+    .coords-top {
+        position: absolute;
+        top: 0;
+        left: var(--coord-size);
+        height: var(--coord-size);
+        display: flex;
+        gap: var(--gap);
+    }
+
+    .coords-left {
+        position: absolute;
+        left: 0;
+        top: var(--coord-size);
+        width: var(--coord-size);
+        display: flex;
+        flex-direction: column;
+        gap: var(--gap);
+    }
+
+    .coord-label-top {
+        width: var(--cell-size);
+        height: var(--coord-size);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        color: var(--primary-accent);
+        font-size: calc(var(--coord-size) * 0.6);
+        font-weight: bold;
+    }
+
+    .coord-label-left {
+        width: var(--coord-size);
+        height: var(--cell-size);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        color: var(--primary-accent);
+        font-size: calc(var(--coord-size) * 0.6);
+        font-weight: bold;
     }
 
     .grid {
